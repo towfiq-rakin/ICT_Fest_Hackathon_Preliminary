@@ -162,34 +162,34 @@ IUT 12th ICT Fest
 
 ## **Request / Response Schemas**
 
-- `POST /auth/register` body _{_ `org` ~~`n`~~ `ame, username, password` _} →{_ `user` ~~`i`~~ `d, org` ~~`i`~~ `d, username, role` _}_
+- `POST /auth/register` body _{_ `org_name, username, password` _} →{_ `user_id, org_id, username, role` _}_
 
-- `POST /auth/login` body _{_ `org` ~~`n`~~ `ame, username, password` _} →{_ `access` ~~`t`~~ `oken, refresh token, token` ~~`t`~~ `ype: "bearer"` _}_ ; bad credentials _→_ `401 INVALID CREDENTIALS`
+- `POST /auth/login` body _{_ `org_name, username, password` _} →{_ `access_token, refresh_token, token_type: "bearer"` _}_ ; bad credentials _→_ `401 INVALID CREDENTIALS`
 
 - `POST /auth/refresh` body _{_ `refresh token` _} →_ same shape as login
 
-- Room: _{_ `id, org id, name, capacity, hourly rate` ~~`c`~~ `ents` _}_ ; `POST /rooms` body _{_ `name, capacity, hourly rate` ~~`c`~~ `ents` _}_
+- Room: _{_ `id, org_id, name, capacity, hourly_rate_cents` _}_ ; `POST /rooms` body _{_ `name, capacity, hourly_rate_cents` _}_
 
-- Availability: _{_ `room` ~~`i`~~ `d, date, busy:`
-  - `[` _{_ `start` ~~`t`~~ `ime, end time` _}_ `, ...]` _}_
+- Availability: _{_ `room_id, date, busy:`
+  - `[` _{_ `start_time, end_time` _}_ `, ...]` _}_
 
-- Stats: _{_ `room id, total` ~~`c`~~ `onfirmed` ~~`b`~~ `ookings, total` ~~`r`~~ `evenue` ~~`c`~~ `ents` _}_
+- Stats: _{_ `room_id, total_confirmed_bookings, total_revenue_cents` _}_
 
-- `POST /bookings` body _{_ `room` ~~`i`~~ `d, start time, end` ~~`t`~~ `ime` _} →_ Booking: _{_ `id, reference` ~~`c`~~ `ode, room` ~~`i`~~ `d, user` ~~`i`~~ `d, start` ~~`t`~~ `ime, end` ~~`t`~~ `ime, status, price` ~~`c`~~ `ents, created at` _}_
+- `POST /bookings` body _{_ `room_id, start_time, end_time` _} →_ Booking: _{_ `id, reference_code, room_id, user_id, start_time, end_time, status, price_cents, created_at` _}_
 
 - `GET /bookings` _→{_ `items: [Booking, ...], page, limit, total` _}_
 
-- `GET /bookings/` _{_ `id` _} →_ Booking plus `refunds: [` _{_ `amount` ~~`c`~~ `ents, status, processed at` _}_ `, ...]`
+- `GET /bookings/` _{_ `id` _} →_ Booking plus `refunds: [` _{_ `amount_cents, status, processed_at` _}_ `, ...]`
 
-- `POST /bookings/` _{_ `id` _}_ `/cancel` _→{_ `id, status: "cancelled", refund percent, refund amount` ~~`c`~~ `ents` _}_
+- `POST /bookings/` _{_ `id` _}_ `/cancel` _→{_ `id, status: "cancelled", refund_percent, refund_amount_cents` _}_
 
-- Usage report _→{_ `from, to, rooms: [` _{_ `room` ~~`i`~~ `d, room name, confirmed` ~~`b`~~ `ookings, revenue cents` _}_ `, ...]` _}_
+- Usage report _→{_ `from, to, rooms: [` _{_ `room_id, room_name, confirmed_bookings, revenue_cents` _}_ `, ...]` _}_
 
-- Export CSV header (exact): `id,reference` ~~`c`~~ `ode,room id,user id, start` ~~`t`~~ `ime, end time,status,price` ~~`c`~~ `ents`
+- Export CSV header (exact): `id,reference_code,room_id,user_id,start_time,end_time,status,price_cents`
 
 ## **Errors**
 
-Application errors return JSON _{_ `"detail": <string>, "code": <CODE>` _}_ with codes: `USERNAME` ~~`T`~~ `AKEN` (409), `INVALID CREDENTIALS` (401), `ROOM CONFLICT` (409), `QUOTA EXCEEDED` (409), `RATE` ~~`L`~~ `IMITED` (429), `ALREADY` ~~`C`~~ `ANCELLED` (409), `BOOKING` ~~`N`~~ `OT` ~~`F`~~ `OUND` (404), `ROOM` ~~`N`~~ `OT` ~~`F`~~ `OUND` (404), `FORBIDDEN` (403), `INVALID BOOKING WINDOW` (400 — past start, non-whole/out-of-range duration, or `end time` _≤_ `start time` ). Missing/invalid/expired/blacklisted tokens _→_ 401. Framework validation errors (422) may use FastAPI’s default shape.
+Application errors return JSON _{_ `"detail": <string>, "code": <CODE>` _}_ with codes: `USERNAME_TAKEN` (409), `INVALID CREDENTIALS` (401), `ROOM CONFLICT` (409), `QUOTA EXCEEDED` (409), `RATE_LIMITED` (429), `ALREADY_CANCELLED` (409), `BOOKING_NOT_FOUND` (404), `ROOM_NOT_FOUND` (404), `FORBIDDEN` (403), `INVALID BOOKING WINDOW` (400 — past start, non-whole/out-of-range duration, or `end_time` _≤_ `start_time` ). Missing/invalid/expired/blacklisted tokens _→_ 401. Framework validation errors (422) may use FastAPI’s default shape.
 
 ## **Fixes must preserve this contract exactly; grading is black-box against it.**
 
@@ -210,16 +210,16 @@ dockercomposeup--build
 ## **Without Docker (Python 3.11)**
 
 ```
-python-mvenv.venv
-#Windows
+python -m venv venv
+# Windows
 .venv\Scripts\activate
-#macOS/Linux
-source.venv/bin/activate
+# macOS/Linux
+source .venv/bin/activate
 ```
 
 ```
-pipinstall-rrequirements.txt
-uvicornapp.main:app--reload
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
 App runs at `http://localhost:8000` . Interactive API docs at `http://localhost:8000/docs` .
