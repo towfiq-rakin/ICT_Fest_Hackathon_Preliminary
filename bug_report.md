@@ -7,6 +7,7 @@
 - [x] **Solved:** Normalizes datetime using `.astimezone(timezone.utc)` before stripping the timezone info.
 - [x] **Bug 5 (Timezone offset parsing wrong):** Normalized offset datetimes to UTC.
 - [x] **Bug 6 (`Z` datetime support missing risk):** Added support to convert trailing `Z` timezone indicator to `+00:00` before parsing.
+- [x] **Bug 40 (Strict datetime validation missing):** Added strict datetime format validation before parsing so date-only strings, datetimes without seconds, and invalid offset minutes such as `+00:60` or `+00:99` return `400 INVALID_BOOKING_WINDOW`.
 
 ---
 
