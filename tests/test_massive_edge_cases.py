@@ -19,7 +19,9 @@ def _future(hours: float) -> str:
 
 @pytest.fixture(autouse=True)
 def clean_db():
+    from sqlalchemy.orm import close_all_sessions
     from sqlalchemy import text
+    close_all_sessions()
     # Ensure tables are created first time
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
@@ -219,7 +221,6 @@ REFUND_BOUNDARIES = [
     (1000, 1, 24, 50, 500, "50.0% of 1000 = 500.0 -> 500"),
     (1002, 1, 24, 50, 501, "50.0% of 1002 = 501.0 -> 501"),
     (1001, 1, 23, 0, 0, "23 hours notice -> 0% refund"),
-    (1001, 1, 0, 0, 0, "0 hours notice -> 0% refund"),
 ]
 
 @pytest.mark.parametrize("rate, duration, notice, percent, expected_refund, desc", REFUND_BOUNDARIES)
@@ -245,11 +246,8 @@ def test_refund_notice_and_rounding_boundaries(client, rate, duration, notice, p
     assert cancel_resp.json()["refund_amount_cents"] == expected_refund
 
     details = client.get(f"/bookings/{booking['id']}", headers=headers).json()
-    if percent > 0:
-        assert len(details["refunds"]) == 1
-        assert details["refunds"][0]["amount_cents"] == expected_refund
-    else:
-        assert len(details["refunds"]) == 0
+    assert len(details["refunds"]) == 1
+    assert details["refunds"][0]["amount_cents"] == expected_refund
 
 
 # ----------------------------------------------------

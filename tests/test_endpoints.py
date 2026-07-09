@@ -18,7 +18,9 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_db():
+    from sqlalchemy.orm import close_all_sessions
     from sqlalchemy import text
+    close_all_sessions()
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
         conn.execute(text("PRAGMA foreign_keys = OFF;"))
