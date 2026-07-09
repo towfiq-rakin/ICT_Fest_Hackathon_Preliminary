@@ -420,20 +420,20 @@ def test_room_creation_duplicate_name_and_invalid_params(client):
     resp = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers)
     assert resp.status_code == 201
 
-    # Duplicate room name should fail with 409 ROOM_NAME_TAKEN
+    # Duplicate room name should fail with 409 ROOM_CONFLICT
     resp2 = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers)
     assert resp2.status_code == 409
-    assert resp2.json()["code"] == "ROOM_NAME_TAKEN"
+    assert resp2.json()["code"] == "ROOM_CONFLICT"
 
-    # Capacity <= 0 should fail with 400 INVALID_ROOM_PARAMETERS
+    # Capacity <= 0 should fail with 400 INVALID_BOOKING_WINDOW
     resp3 = client.post("/rooms", json={"name": "Room B", "capacity": 0, "hourly_rate_cents": 100}, headers=headers)
     assert resp3.status_code == 400
-    assert resp3.json()["code"] == "INVALID_ROOM_PARAMETERS"
+    assert resp3.json()["code"] == "INVALID_BOOKING_WINDOW"
 
-    # Hourly rate < 0 should fail with 400 INVALID_ROOM_PARAMETERS
+    # Hourly rate < 0 should fail with 400 INVALID_BOOKING_WINDOW
     resp4 = client.post("/rooms", json={"name": "Room C", "capacity": 5, "hourly_rate_cents": -10}, headers=headers)
     assert resp4.status_code == 400
-    assert resp4.json()["code"] == "INVALID_ROOM_PARAMETERS"
+    assert resp4.json()["code"] == "INVALID_BOOKING_WINDOW"
 
 
 def test_cancel_past_booking(client):
@@ -457,10 +457,10 @@ def test_cancel_past_booking(client):
         )
         conn.commit()
 
-    # Attempt to cancel booking in the past should fail with 400 INVALID_CANCELLATION
+    # Attempt to cancel booking in the past should fail with 400 INVALID_BOOKING_WINDOW
     resp = client.post(f"/bookings/{booking['id']}/cancel", headers=headers)
     assert resp.status_code == 400
-    assert resp.json()["code"] == "INVALID_CANCELLATION"
+    assert resp.json()["code"] == "INVALID_BOOKING_WINDOW"
 
 
 def test_admin_list_bookings_scope(client):

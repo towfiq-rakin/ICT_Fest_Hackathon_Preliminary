@@ -78,13 +78,13 @@ These are the rules the API is expected to follow. Some bugs are deviations from
 
 1. **Datetimes.** All API datetimes are ISO 8601. Input datetimes carrying a UTC offset must be converted to UTC before storage or comparison; naive input is treated as UTC. All response datetimes are UTC with an explicit UTC designator.
 
-2. **Booking price.** `price` ~~`c`~~ `ents = hourly` ~~`r`~~ `ate` ~~`c`~~ `ents` _×_ `duration` ~~`h`~~ `ours` . Duration must be a whole number of hours, minimum 1, maximum 8. `end` ~~`t`~~ `ime` must be strictly after `start` ~~`t`~~ `ime` . `start time` must be strictly in the future at request time - no grace window.
+2. **Booking price.** `price_cents = hourly_rate_cents` _×_ `duration_hours` . Duration must be a whole number of hours, minimum 1, maximum 8. `end_time` must be strictly after `start_time` . `start_time` must be strictly in the future at request time - no grace window.
 
-3. **No double-booking.** Two confirmed bookings for the same room overlap iff `existing.start < new.end AND new.start < existing.end` . Back-to-back bookings are allowed. Conflict _→_ `409 ROOM` ~~`C`~~ `ONFLICT` . Must hold under concurrent requests.
+3. **No double-booking.** Two confirmed bookings for the same room overlap iff `existing.start < new.end AND new.start < existing.end` . Back-to-back bookings are allowed. Conflict _→_ `409 ROOM_CONFLICT` . Must hold under concurrent requests.
 
-4. **Booking quota.** A member may hold at most 3 confirmed bookings with `start` ~~`t`~~ `ime` in the window ( _now, now_ + 24 _h_ ], across all rooms in their org. Violation _→_ `409 QUOTA EXCEEDED` . Must hold under concurrent requests.
+4. **Booking quota.** A member may hold at most 3 confirmed bookings with `start_time` in the window ( _now, now_ + 24 _h_ ], across all rooms in their org. Violation _→_ `409 QUOTA EXCEEDED` . Must hold under concurrent requests.
 
-5. **Rate limit.** `POST /bookings` is limited to 20 requests per rolling 60 seconds per user (all requests count). Excess _→_ `429 RATE` ~~`L`~~ `IMITED` . Must hold under concurrent requests.
+5. **Rate limit.** `POST /bookings` is limited to 20 requests per rolling 60 seconds per user (all requests count). Excess _→_ `429 RATE LIMITED` . Must hold under concurrent requests.
 
 6. **Cancellation refund policy.** Only the booking’s owner or an admin of the same org may cancel. Notice = `start time` _−_ cancellation time:
    - notice _≥_ 48 hours _→_ 100% refund
@@ -93,17 +93,17 @@ These are the rules the API is expected to follow. Some bugs are deviations from
 
    - notice _<_ 24 hours _→_ 0% refund
 
-Refund amount rounds to the nearest cent, half-cents rounding up. Cancelling an alreadycancelled booking _→_ `409 ALREADY` ~~`C`~~ `ANCELLED` . A cancelled booking has exactly one RefundLog entry, and the amount returned by the cancel response must equal the amount stored in the RefundLog. Must hold under concurrent cancel requests for the same booking.
+Refund amount rounds to the nearest cent, half-cents rounding up. Cancelling an alreadycancelled booking _→_ `409 ALREADY_CANCELLED` . A cancelled booking has exactly one RefundLog entry, and the amount returned by the cancel response must equal the amount stored in the RefundLog. Must hold under concurrent cancel requests for the same booking.
 
-7. **Reference codes.** Every booking’s `reference` ~~`c`~~ `ode` is unique, including under concurrent creation.
+7. **Reference codes.** Every booking’s `reference_code` is unique, including under concurrent creation.
 
 8. **Auth.** Tokens are JWTs (HS256) with claims `sub` (user id, string), `org` (org id), `role` , `jti` (unique per token), `iat` , `exp` , `type` ( `access` _|_ `refresh` ). Access tokens expire in exactly 900 seconds. Refresh tokens expire in 7 days. Logout immediately invalidates the presented access token (subsequent use _→_ `401` ). Refresh tokens are single-use: refreshing returns a new access and refresh token and invalidates the presented refresh token (reuse _→_ `401` ).
 
 9. **Multi-tenancy.** A user (including admins) may only ever read or act on data belonging to their own organization, on every code path. Cross-org resource IDs behave as non-existent ( _→_ `404` ).
 
-10. **Booking visibility.** Members may read and cancel only their own bookings (another member’s booking id _→_ `404 BOOKING NOT` ~~`F`~~ `OUND` ). Admins may read and cancel any booking in their org.
+10. **Booking visibility.** Members may read and cancel only their own bookings (another member’s booking id _→_ `404 BOOKING NOT FOUND` ). Admins may read and cancel any booking in their org.
 
-11. **Pagination & ordering.** `GET /bookings` takes `page` (default 1) and `limit` (default 10, max 100). Items are the caller’s own bookings sorted ascending by `start` ~~`t`~~ `ime` (ties by ascending `id` ). Sequential pages never skip or repeat items. Response includes `total` .
+11. **Pagination & ordering.** `GET /bookings` takes `page` (default 1) and `limit` (default 10, max 100). Items are the caller’s own bookings sorted ascending by `start_time` (ties by ascending `id` ). Sequential pages never skip or repeat items. Response includes `total` .
 
 2
 

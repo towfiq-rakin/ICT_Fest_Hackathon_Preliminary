@@ -107,15 +107,16 @@
 - [x] **Bug 39 (CSV export missing room ownership validation):** Added validation check in `/admin/export` to verify the requested room ID belongs to the administrator's organization, returning a 404 instead of a 200 with an empty file when cross-org resource IDs are accessed.
 
 ---
+
 ---
 
 ## 8. Solved Gaps (New Audited Bugs)
 
 - [x] **Bug 19 (Double Cancel ORM State)**: Under concurrent cancellation requests, status verification and DB updates are fully isolated via `populate_existing()`, `db.refresh(booking)`, and `db.flush()` inside the cancel lock, preventing duplicate refund actions.
-- [x] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` now queries for existing room names and raises a graceful `409 ROOM_NAME_TAKEN` AppError.
-- [x] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` now validates that room capacity is > 0 and hourly rate is >= 0, raising `400 INVALID_ROOM_PARAMETERS` on validation failure.
+- [x] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` now queries for existing room names and raises a graceful `409 ROOM_CONFLICT` AppError.
+- [x] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` now validates that room capacity is > 0 and hourly rate is >= 0, raising `400 INVALID_BOOKING_WINDOW` on validation failure.
 - [x] **Bug 26 (Missing Database UniqueConstraint on Room)**: Added `UniqueConstraint("org_id", "name")` to the `Room` model in `app/models.py`.
-- [x] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` now rejects cancellations with `400 INVALID_CANCELLATION` if `start_time` is in the past.
+- [x] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` now rejects cancellations with `400 INVALID_BOOKING_WINDOW` if `start_time` is in the past.
 - [x] **Bug 30 (Admin List Bookings Org Scope)**: `list_bookings` filters by organization scope instead of user ID when caller is an admin, enabling admins to see other members' bookings in the organization.
 - [x] **Bug 31 (Artificial Sleeps in lock)**: Removed dummy functions `_pricing_warmup`, `_quota_audit`, and `_settlement_pause` and deleted their invocations entirely.
 - [x] **Bug 33 (Revoked Token Set growth/pruning)**: Upgraded `_revoked_tokens` to store JWT expirations as mapping `jti -> exp`, pruning expired tokens dynamically to avoid memory leaks.

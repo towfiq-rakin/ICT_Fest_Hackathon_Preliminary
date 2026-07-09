@@ -205,7 +205,7 @@ def cancel_booking(
 
         now = datetime.utcnow()
         if booking.start_time <= now:
-            raise AppError(400, "INVALID_CANCELLATION", "Cannot cancel bookings that have already started or ended")
+            raise AppError(400, "INVALID_BOOKING_WINDOW", "Cannot cancel bookings that have already started or ended")
 
         notice = booking.start_time - now
         if notice >= timedelta(hours=48):
