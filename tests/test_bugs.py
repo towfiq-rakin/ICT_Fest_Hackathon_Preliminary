@@ -1,4 +1,5 @@
 import pytest
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
@@ -7,8 +8,18 @@ from app.timeutils import parse_input_datetime
 
 client = TestClient(app)
 
+def test_access_token_lifetime():
+    # Bug 1: Access token expiry wrong
+    from app.models import User
+    from app.auth import create_access_token, decode_token
+    user = User(id=123, org_id=1, role="member")
+    token = create_access_token(user)
+    payload = decode_token(token)
+    lifetime_seconds = payload["exp"] - payload["iat"]
+    assert lifetime_seconds == 900  # Exactly 15 minutes (900 seconds)
+
 def test_parse_input_datetime():
-    # Bug 1: timezone normalization
+    # Bug 5: timezone normalization
     # Input is +06:00 offset, so 18:00+06:00 should convert to 12:00 UTC
     dt = parse_input_datetime("2026-07-09T18:00:00+06:00")
     assert dt.hour == 12
@@ -18,6 +29,11 @@ def test_parse_input_datetime():
     dt_naive = parse_input_datetime("2026-07-09T18:00:00")
     assert dt_naive.hour == 18
     assert dt_naive.tzinfo is None
+
+    # Bug 6: Z offset input should convert to naive UTC
+    dt_z = parse_input_datetime("2026-07-09T18:00:00Z")
+    assert dt_z.hour == 18
+    assert dt_z.tzinfo is None
 
 def test_auth_token_revocation_jti():
     # Bug 2 & 3B: JWT token verification and single-use refresh token
@@ -93,6 +109,19 @@ def test_bookings_duration_bounds_and_conflicts():
     )
     room_id = room.json()["id"]
 
+    # Bug 7: Invalid datetime string returns 400
+    res_bad_dt = client.post(
+        "/bookings",
+        json={
+            "room_id": room_id,
+            "start_time": "invalid-datetime-string",
+            "end_time": "invalid-datetime-string"
+        },
+        headers=headers,
+    )
+    assert res_bad_dt.status_code == 400
+    assert res_bad_dt.json()["code"] == "INVALID_BOOKING_WINDOW"
+
     # Bug 4C: end_time <= start_time
     t_start = (datetime.now(timezone.utc) + timedelta(hours=5)).replace(minute=0, second=0, microsecond=0)
     res_invalid_time = client.post(
@@ -154,7 +183,12 @@ def test_bookings_duration_bounds_and_conflicts():
     assert b1.status_code == 201
     b1_id = b1.json()["id"]
 
-    # Bug 4A: Back-to-back bookings should be allowed (non-overlapping boundaries)
+    # Bug 16 & 17: UUID-backed reference code validation
+    ref = b1.json()["reference_code"]
+    assert ref.startswith("CW-")
+    assert len(ref) == 11
+
+    # Bug 4A & 11: Back-to-back bookings should be allowed (non-overlapping boundaries)
     # Booking (2) from t1_end to t1_end + 2 hours
     t2_start = t1_end
     t2_end = t2_start + timedelta(hours=2)
@@ -214,9 +248,32 @@ def test_bookings_duration_bounds_and_conflicts():
     assert cancel3.json()["refund_percent"] == 0
     assert cancel3.json()["refund_amount_cents"] == 0
 
+def test_member_ownership():
+    # Bug 22: Member ownership check in booking details & cancel
+    org_name = f"org-owner-test-{datetime.now().timestamp()}"
+    client.post("/auth/register", json={"org_name": org_name, "username": "alice", "password": "password123"})
+    token_a = client.post("/auth/login", json={"org_name": org_name, "username": "alice", "password": "password123"}).json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    client.post("/auth/register", json={"org_name": org_name, "username": "bob", "password": "password123"})
+    token_b = client.post("/auth/login", json={"org_name": org_name, "username": "bob", "password": "password123"}).json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    room = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 1000}, headers=headers_a).json()["id"]
+    t_start = (datetime.now(timezone.utc) + timedelta(hours=10)).replace(minute=0, second=0, microsecond=0)
+    booking = client.post("/bookings", json={"room_id": room, "start_time": t_start.isoformat(), "end_time": (t_start+timedelta(hours=2)).isoformat()}, headers=headers_a).json()
+    b_id = booking["id"]
+
+    # Member B tries to view member A's booking (same org, not admin) - should fail with 404
+    view_res = client.get(f"/bookings/{b_id}", headers=headers_b)
+    assert view_res.status_code == 404
+
+    # Member B tries to cancel member A's booking - should fail with 404
+    cancel_res = client.post(f"/bookings/{b_id}/cancel", headers=headers_b)
+    assert cancel_res.status_code == 404
+
 def test_export_security():
-    # Bug 5: Export isolates data by organization
-    # Create org A and user A, room A, booking A
+    # Bug 5 & 38: Export isolates data by organization
     org_a = f"org-exp-a-{datetime.now().timestamp()}"
     client.post("/auth/register", json={"org_name": org_a, "username": "admin_a", "password": "password123"})
     token_a = client.post("/auth/login", json={"org_name": org_a, "username": "admin_a", "password": "password123"}).json()["access_token"]
@@ -224,9 +281,8 @@ def test_export_security():
 
     room_a = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 1000}, headers=headers_a).json()["id"]
     t_start = (datetime.now(timezone.utc) + timedelta(hours=10)).replace(minute=0, second=0, microsecond=0)
-    b_a = client.post("/bookings", json={"room_id": room_a, "start_time": t_start.isoformat(), "end_time": (t_start+timedelta(hours=2)).isoformat()}, headers=headers_a).json()
+    client.post("/bookings", json={"room_id": room_a, "start_time": t_start.isoformat(), "end_time": (t_start+timedelta(hours=2)).isoformat()}, headers=headers_a)
 
-    # Create org B and user B
     org_b = f"org-exp-b-{datetime.now().timestamp()}"
     client.post("/auth/register", json={"org_name": org_b, "username": "admin_b", "password": "password123"})
     token_b = client.post("/auth/login", json={"org_name": org_b, "username": "admin_b", "password": "password123"}).json()["access_token"]
@@ -235,7 +291,6 @@ def test_export_security():
     # User B tries to export room A's bookings (should be empty because room A belongs to Org A)
     export_res = client.get(f"/admin/export?room_id={room_a}&include_all=true", headers=headers_b)
     assert export_res.status_code == 200
-    # The output should only be the CSV header, with no rows matching the booking in room A
     lines = export_res.text.strip().split("\n")
     assert len(lines) == 1
     assert lines[0].startswith("id,reference_code")

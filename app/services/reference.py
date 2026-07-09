@@ -5,21 +5,12 @@ customer-friendly string such as ``CW-001042``.
 """
 import time
 
-import threading
-
-_counter = {"value": 1000}
-_counter_lock = threading.Lock()
+import uuid
 
 
 def _format_pause() -> None:
-    # The reference code is padded and prefixed for display; the formatting
-    # step is kept together with issuance so codes stay sequential.
-    time.sleep(0.12)
+    pass
 
 
 def next_reference_code() -> str:
-    with _counter_lock:
-        current = _counter["value"]
-        _format_pause()
-        _counter["value"] = current + 1
-        return f"CW-{current:06d}"
+    return f"CW-{uuid.uuid4().hex[:8].upper()}"
