@@ -104,3 +104,5 @@
 - [x] **Bug 33 (Usage report cache invalidation on room creation):** Cleared organization reports cache inside `create_room` route.
 - [x] **Bug 34 & 35 (Stale stats cache & race):** Deprecated stats cache updates and dynamically aggregate room booking statistics directly from the database query.
 - [x] **Bug 36 & 37 (Rate limiter races and sleeps):** Locked limiter state changes and removed liveness blocking sleeps.
+- [x] **Bug 39 (CSV export missing room ownership validation):** Added validation check in `/admin/export` to verify the requested room ID belongs to the administrator's organization, returning a 404 instead of a 200 with an empty file when cross-org resource IDs are accessed.
+
