@@ -1,126 +1,226 @@
-# bug_report.md
+# CoWork Bug Report
 
-## 1. app/timeutils.py
+### Bug 1 - Access Token Expiry Calculated Incorrectly
+*File:* [app/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/auth.py), line 50
+*Bug*: `timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)` was missing `minutes=`, causing the token expiration to default to 15 days instead of 15 minutes.
+*Fix*: Explicitly passed `minutes=ACCESS_TOKEN_EXPIRE_MINUTES`.
 
-- **Location:** `parse_input_datetime` function.
-- **Bug:** Uses `dt.replace(tzinfo=None)` directly, which discards the timezone offset instead of converting the time value to UTC first.
-- [x] **Solved:** Normalizes datetime using `.astimezone(timezone.utc)` before stripping the timezone info.
-- [x] **Bug 5 (Timezone offset parsing wrong):** Normalized offset datetimes to UTC.
-- [x] **Bug 6 (`Z` datetime support missing risk):** Added support to convert trailing `Z` timezone indicator to `+00:00` before parsing.
+### Bug 2 - Logout Revoked Check Uses Wrong Claim
+*File:* [app/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/auth.py), line 97
+*Bug*: The revocation check `payload.get("sub") in _revoked_tokens` checked the user ID instead of the token's unique ID (`jti`). Logging out did not blacklist the specific token.
+*Fix*: Changed the check to use `payload.get("jti")`.
 
----
+### Bug 3 - Registration Does Not Return 409 for Duplicate Username
+*File:* [app/routers/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/auth.py), line 37
+*Bug*: Registering a duplicate username returned HTTP 200 OK with the existing user's details instead of raising a conflict.
+*Fix*: Raised `AppError(409, "USERNAME_TAKEN", ...)` if the username is already taken.
 
-## 2. app/auth.py
+### Bug 4 - Refresh Tokens Are Not Single-Use
+*File:* [app/routers/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/auth.py), line 88
+*Bug*: The `/refresh` endpoint did not invalidate the refresh token after use, violating the single-use token requirement.
+*Fix*: Added the old token's `jti` to the `_revoked_tokens` list before generating the new token pair.
 
-- **Location:** `get_token_payload` function.
-- **Bug:** Checks if the user ID (`payload.get("sub")`) is inside `_revoked_tokens`, but the logout function stores the token ID (`payload["jti"]`) instead. This makes token revocation completely ineffective.
-- [x] **Solved:** Checks token revocation by checking the `jti` claim against `_revoked_tokens` and provides clean helpers.
-- [x] **Bug 1 (Access token expiry wrong):** Corrected access token expiration duration calculation from 900 minutes to 15 minutes (900 seconds).
-- [x] **Bug 2 (Logout revocation broken):** Switched revocation checks to token `jti` to immediately reject logged-out access tokens.
+### Bug 5 - Datetime Timezone Conversion Strips Offset
+*File:* [app/timeutils.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/timeutils.py), line 13
+*Bug*: `parse_input_datetime` stripped the `tzinfo` from aware datetimes without first converting them to UTC. This altered the absolute time for non-UTC offsets.
+*Fix*: Added `.astimezone(timezone.utc)` before dropping the `tzinfo`.
 
----
+### Bug 6 - Start Time Allows 5-Minute Grace Window in the Past
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 86
+*Bug*: The `create_booking` check `start >= now - timedelta(minutes=5)` allowed bookings up to 5 minutes in the past, violating the rule that booking start times must be strictly in the future.
+*Fix*: Changed check to strictly `start > now` (implemented as `start <= now: raise AppError`).
 
-## 3. app/routers/auth.py
+### Bug 7 - Overlap Check Blocks Back-to-Back Bookings
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 50
+*Bug*: The conflict check used `<=` and `>=`, causing a booking ending at 14:00 to conflict with a booking starting at 14:00.
+*Fix*: Changed to strict `<` (`b.start_time < end and start < b.end_time`).
 
-- **Location:** `/auth/register` and `/auth/refresh` endpoints.
-- **Bug A:** `/auth/register` returns existing user details with a `201` status code instead of triggering a `409 USERNAME_TAKEN` error when a username is duplicated within an organization.
-  - [x] **Solved:** Added `AppError(409, "USERNAME_TAKEN", ...)` check for duplicate username registrations.
-- **Bug B:** `/auth/refresh` decodes refresh tokens but fails to track or blacklist their `jti` identifiers, allowing single-use refresh tokens to be reused infinitely.
-  - [x] **Solved:** Blacklists the refresh token's `jti` upon use to enforce single-use logic.
-- **Bug C:** Concurrent `/auth/refresh` requests could both pass the `is_token_revoked()` check before either request revoked the same `jti`.
-  - [x] **Solved:** Added atomic `revoke_token_once()` helper guarded by a lock; now only one concurrent refresh can consume a token.
-- [x] **Bug 3 (Refresh token reusable):** Enforced single-use refresh tokens via used-list verification.
-- [x] **Bug 4 (Duplicate username returned success):** Fixed conflict behavior by raising `USERNAME_TAKEN` on registration collision.
+### Bug 8 - Missing Minimum Duration Check
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 90
+*Bug*: Checked for maximum duration but failed to enforce `MIN_DURATION_HOURS`.
+*Fix*: Enforced `duration_hours >= MIN_DURATION_HOURS` by raising `AppError` on violations.
 
----
+### Bug 9 - Missing `end_time > start_time` Validation
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 83
+*Bug*: Failed to validate that `end_time` is logically after `start_time`.
+*Fix*: Added validation for `end <= start` to raise a 400 error.
 
-## 4. app/routers/bookings.py
+### Bug 10 - `list_bookings` Ordering, Offset, and Limit
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 137
+*Bug*: Ordered by `desc()` instead of `asc()`. Offset calculated as `page * limit` instead of `(page - 1) * limit`. Hardcoded `.limit(10)` instead of using the query parameter.
+*Fix*: Corrected all three to `asc()`, `(page - 1) * limit`, and `.limit(limit)`.
 
-- **Location:** Various booking logic operations.
-- **Bug A (`_has_conflict`):** Uses inclusive inequalities (`<=` and `>=`), which blocks valid back-to-back room bookings.
-  - [x] **Solved:** Replaced with strict inequalities (`<` and `<`).
-- **Bug B (`create_booking`):** Implements an intentional 5-minute past window grace period (`now - timedelta(seconds=300)`), allowing users to make historical bookings.
-  - [x] **Solved:** Prohibited historical bookings with `start <= now`.
-- **Bug C (`create_booking`):** Lacks verification boundaries for minimum durations or configurations where `end_time <= start_time`.
-  - [x] **Solved:** Added validations for `end_time <= start_time` and duration out of range `[MIN_DURATION_HOURS, MAX_DURATION_HOURS]`.
-- **Bug D (`list_bookings`):** Sorts queries by `start_time.desc()` instead of ascending. Additionally, it uses an incorrect offset math formula (`page * limit` which skips page 1 entirely) and hardcodes a sizing ceiling of `.limit(10)`.
-  - [x] **Solved:** Fixed sorting order (ascending), offset calculation `(page - 1) * limit`, and replaced the hardcoded limit with the dynamic query `limit`.
-- **Bug E (`get_booking`):** Overwrites the actual booking `start_time` payload value with the booking's creation timestamp (`booking.created_at`) right before returning the response.
-  - [x] **Solved:** Removed the overriding line so the actual `start_time` is returned.
-- **Bug F (`cancel_booking`):** Notice window check uses `notice_hours > 48` (skipping exactly 48 hours) and returns a 50% refund for notice durations under 24 hours instead of a 0% refund.
-  - [x] **Solved:** Corrected notice comparison to `notice_hours >= 48` and set refund percent to 0% for notice durations under 24 hours.
-- **Bug G (`cancel_booking`):** Utilizes standard Python Banker's Rounding via `round()`, creating a data calculation mismatch against `log_refund` which completely truncates figures using `int()`.
-  - [x] **Solved:** Used `int()` truncation for `refund_amount_cents` calculation to match the database entries created by `log_refund`.
-- **Bug H (`create_booking` & `cancel_booking`):** Missing critical live cache invalidation handlers—`create_booking` does not clear stale admin reports and `cancel_booking` does not clear room availability busy slots.
-  - [x] **Solved:** Integrated `cache.invalidate_report(user.org_id)` on creation and `cache.invalidate_availability(...)` on cancellation.
-- [x] **Bug 7 (Invalid datetime format):** Caught datetimes parsing `ValueError` and returned a clean `400` status code.
-- [x] **Bug 8 (Past start grace window):** Restricted start time to future-only (`start <= now`).
-- [x] **Bug 9 (End before start):** Added explicit checks to reject `end_time <= start_time`.
-- [x] **Bug 10 (Zero-hour booking):** Enforced duration bound check `[1, 8]` hours.
-- [x] **Bug 11 (Back-to-back conflicts):** Fixed slot overlap checking to support back-to-back bookings.
-- [x] **Bug 12 (Conflict check loaded all bookings):** Optimized query to check slot conflicts at DB level instead of filtering in Python.
-- [x] **Bug 13 & 14 (Concurrent creation races):** Wrapped booking verification and insertion inside a global thread lock.
-- [x] **Bug 15 (Artificial booking sleeps):** Removed sleeps from booking check, quota verification, and cancellation.
-- [x] **Bug 19 (Booking list sort wrong):** Sorted by `start_time ASC, id ASC`.
-- [x] **Bug 20 & 21 (Booking pagination offsets and limits):** Fixed pagination offsets to `(page - 1) * limit` and mapped requested limit limits.
-- [x] **Bug 22 (Member viewing another member's details):** Enforced ownership controls on detail checks for regular members.
-- [x] **Bug 23 (Booking detail start time overwrite):** Removed overwrite of `start_time` in serialized output.
-- [x] **Bug 24 (Cancellation refund boundary):** Compared timedelta objects using `>= timedelta(hours=48)` to correctly handle edge boundaries.
-- [x] **Bug 25 (Notice under 24 hours refund):** Set refund percent to 0% for cancellations under 24 hours notice.
-- [x] **Bug 26 (Refund rounding math):** Mapped cent calculations using `Decimal` and `ROUND_HALF_UP` for precision half-up rounding.
-- [x] **Bug 30 (Concurrent cancel race):** Prevented status races on cancellation using a cancellation lock.
-- [x] **Bug 39 (Concurrent cancel stale ORM object):** Moved booking lookup inside the cancellation lock so later requests see the committed `cancelled` status and return `409 ALREADY_CANCELLED` instead of causing duplicate refund-log `500` errors.
-- [x] **Bug 31 & 32 (Cache invalidations on creation/cancellation):** Synchronously cleared respective report and availability caches.
+### Bug 11 - `get_booking` Overwrites `start_time`
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 166
+*Bug*: The endpoint accidentally reassigned `booking.start_time = booking.created_at` before serialization.
+*Fix*: Removed the reassignment line.
 
----
+### Bug 12 - Refund Policy `< 24h` Returns 50%
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 206
+*Bug*: `notice_hours < 24` fell into the `else` block which was set to `refund_percent = 50` instead of `0`.
+*Fix*: Corrected the else block to `refund_percent = 0`.
 
-## 5. app/services/export.py
+### Bug 13 - `refund_amount_cents` Inconsistency
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), lines 208–210
+*Bug*: Cancel response computed `refund_amount_cents` independently from `log_refund()`. Different rounding could cause them to diverge.
+*Fix*: `log_refund()` returns the RefundLog entry; `refund_amount_cents = refund_log.amount_cents`.
 
-- **Location:** `generate_export` function.
-- **Bug:** When `include_all` evaluates to true with a specified `room_id`, it executes an un-scoped data query across the database. This enables organization cross-read exposures that break multi-tenancy isolation policies.
-- [x] **Solved:** Routed export queries to `_fetch_scoped(...)` to ensure multi-tenancy organization filtering is strictly applied.
-- [x] **Bug 38 (CSV export cross-org leak):** Applied org filter restrictions to `include_all=True` queries.
+### Bug 14 - Refund Rounding Uses Truncation Instead of Half-Up
+*File:* [app/services/refunds.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/refunds.py), line 17
+*Bug*: `int(refund_dollars * 100)` truncates instead of rounding. Spec requires half-cents round up.
+*Fix*: Changed calculation to `math.floor(booking.price_cents * percent / 100.0 + 0.5)`.
 
----
+### Bug 15 - Reference Code Counter Is Not Atomic
+*File:* [app/services/reference.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/reference.py)
+*Bug*: Non-atomic read-modify-write with a `time.sleep(0.12)` between read and write guarantees duplicate codes under concurrency.
+*Fix*: Protected with `threading.Lock()`, removed the sleep.
 
-## 6. app/services/notifications.py
+### Bug 16 - Rate Limiter Records Request Before Checking Limit
+*File:* [app/services/ratelimit.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/ratelimit.py)
+*Bug*: Request appended to bucket before the limit check, plus a `time.sleep(0.1)` created race conditions. The 21st request always passed.
+*Fix*: Check `len(bucket) >= _MAX_REQUESTS` before appending; protected with `threading.Lock()`.
 
-- **Location:** `notify_created` and `notify_cancelled` functions.
-- **Bug:** `notify_created` requests locks in the sequence of `_email_lock` $\rightarrow$ `_audit_lock`, while `notify_cancelled` requests them as `_audit_lock` $\rightarrow$ `_email_lock`. Executing these concurrently triggers thread deadlocks.
-- [x] **Solved:** Standardized lock order to `_email_lock` then `_audit_lock` in both notification functions to prevent deadlocks.
+### Bug 17 - Room Stats Use Inconsistent In-Memory Cache
+*File:* [app/services/stats.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/stats.py)
+*Bug*: In-memory read-modify-write with `time.sleep(0.1)` between read and write guaranteed stale/wrong stats under concurrent bookings/cancellations. Additionally, on application reboot, lazy-loaded in-memory entries defaulted to `{"count": 0, "revenue": 0}` regardless of existing DB records.
+*Fix*: Removed in-memory cache entirely. `stats.get()` now queries DB directly with `COUNT`/`SUM` aggregates for always-consistent results.
 
----
+### Bug 18 - Deadlock in Notifications Service
+*File:* [app/services/notifications.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/notifications.py)
+*Bug*: `notify_created` acquired `_email_lock` then `_audit_lock`, while `notify_cancelled` acquired `_audit_lock` then `_email_lock`. This lock-order inversion caused deadlocks under concurrent load.
+*Fix*: Modified both functions to always acquire locks in the same order (`_email_lock` then `_audit_lock`).
 
-## 7. Shared Memory Concurrency & State Management
+### Bug 19 - Double Cancel Race Condition
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), [app/services/refunds.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/refunds.py)
+*Bug*: `log_refund` committed its transaction, then `_settlement_pause()` ran before setting `booking.status = "cancelled"` and committing. This allowed a concurrent cancel request to pass the `booking.status == "cancelled"` check, resulting in multiple refunds.
+*Fix*: `log_refund` now uses `db.flush()` instead of `db.commit()`. The status change and refund log are committed atomically in the router after `log_refund` returns. Removed the artificial `_settlement_pause()`.
 
-- **Location:** `stats.py`, `ratelimit.py`, and `reference.py` in `app/services/`
-- **Bug:** Global variables (`_stats`, `_buckets`, and `_counter`) are modified across worker threads amidst arbitrary `time.sleep` intervals without synchronization mutexes or lock locks, yielding race conditions that drop count updates, leak rate boundaries, or generate identical reference strings.
-- [x] **Solved:** Wrapped modifications of `_stats`, `_buckets`, and `_counter` with corresponding thread locks (`_stats_lock`, `_rate_limit_lock`, `_counter_lock`) to guarantee race-free thread safety.
-- [x] **Bug 16 & 17 (Reference counter races & restarts):** Replaced seq-counter with random, secure UUID-backed reference codes.
-- [x] **Bug 18 (No DB uniqueness on reference codes):** Added unique constraint on booking database table.
-- [x] **Bug 27 (Refund float math):** Updated `log_refund` and calculation sequences to use pre-calculated cent integers.
-- [x] **Bug 28 (Refund log atomicity):** Removed commit/refresh triggers from sub-helpers to ensure cancellation and refunds are atomic in a single database transaction.
-- [x] **Bug 29 (Refund log uniqueness):** Placed unique constraints on the `booking_id` field in the database.
-- [x] **Bug 33 (Usage report cache invalidation on room creation):** Cleared organization reports cache inside `create_room` route.
-- [x] **Bug 34 & 35 (Stale stats cache & race):** Deprecated stats cache updates and dynamically aggregate room booking statistics directly from the database query.
-- [x] **Bug 36 & 37 (Rate limiter races and sleeps):** Locked limiter state changes and removed liveness blocking sleeps.
-- [x] **Bug 39 (CSV export missing room ownership validation):** Added validation check in `/admin/export` to verify the requested room ID belongs to the administrator's organization, returning a 404 instead of a 200 with an empty file when cross-org resource IDs are accessed.
+### Bug 20 - Multi-Tenancy Bypass in Export
+*File:* [app/services/export.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/export.py)
+*Bug*: When `include_all=True` and `room_id` was provided, the export used `fetch_bookings_raw(db, room_id)` which queried the `bookings` table directly without joining `Room` and checking `org_id`. This allowed an admin to export bookings from another organization's room.
+*Fix*: Modified `generate_export` to always use `_fetch_scoped(db, org_id, None, room_id)` for the `include_all` case, which enforces the `org_id` isolation.
 
----
+### Bug 21 - `get_booking` Allows Cross-Member Read
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py)
+*Bug*: The endpoint checked that the room belonged to the caller's organization (`Room.org_id == user.org_id`), but did not enforce Rule 10 ("Members may read and cancel only their own bookings"). A member could query another member's booking ID and read it.
+*Fix*: Added `if user.role != "admin" and booking.user_id != user.id: raise AppError(404, "BOOKING_NOT_FOUND", "Booking not found")`.
 
----
+### Bug 22 - Concurrency Races in Booking Creation
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py)
+*Bug*: The `_has_conflict()` and `_check_quota()` functions read from the database, experienced an artificial delay (`time.sleep()`), and then the booking was inserted. This created concurrent race windows.
+*Fix*: Created a global `_booking_lock = threading.Lock()` and wrapped the conflict check, quota check, and `db.commit()` inside this lock to make the check-and-insert sequence atomic across concurrent requests.
 
-## 8. Solved Gaps (New Audited Bugs)
+### Bug 23 - Missing Duplicate Name Check on Room Creation
+*File:* [app/routers/rooms.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/rooms.py)
+*Bug*: The `create_room` endpoint did not check if a room with the same name already existed in the organization. If a duplicate was inserted, SQLite's unique constraint threw an `IntegrityError`, resulting in a 500 Internal Server Error instead of the required 409 Conflict.
+*Fix*: Added an explicit query for `existing = db.query(Room).filter(...)` and raised a 409 `ROOM_CONFLICT` AppError.
 
-- [x] **Bug 19 (Double Cancel ORM State)**: Under concurrent cancellation requests, status verification and DB updates are fully isolated via `populate_existing()`, `db.refresh(booking)`, and `db.flush()` inside the cancel lock, preventing duplicate refund actions.
-- [x] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` now queries for existing room names and raises a graceful `409 ROOM_CONFLICT` AppError.
-- [x] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` now validates that room capacity is > 0 and hourly rate is >= 0, raising `400 INVALID_BOOKING_WINDOW` on validation failure.
-- [x] **Bug 26 (Missing Database UniqueConstraint on Room)**: Added `UniqueConstraint("org_id", "name")` to the `Room` model in `app/models.py`.
-- [x] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` now rejects cancellations with `400 INVALID_BOOKING_WINDOW` if `start_time` is in the past.
-- [x] **Bug 30 (Admin List Bookings Org Scope)**: `list_bookings` filters by organization scope instead of user ID when caller is an admin, enabling admins to see other members' bookings in the organization.
-- [x] **Bug 31 (Artificial Sleeps in lock)**: Removed dummy functions `_pricing_warmup`, `_quota_audit`, and `_settlement_pause` and deleted their invocations entirely.
-- [x] **Bug 33 (Revoked Token Set growth/pruning)**: Upgraded `_revoked_tokens` to store JWT expirations as mapping `jti -> exp`, pruning expired tokens dynamically to avoid memory leaks.
-- [x] **Bug 34 (Cache Module Thread Safety)**: Wrapped report and availability cache read/update/invalidation operations in a `threading.Lock`.
-- [x] **Bug 35 (Usage Report Inverted Dates)**: Added validation to `usage_report` to raise a `400 INVALID_BOOKING_WINDOW` error when `from > to` inverted ranges are requested.
-- [x] **Bug 36 (Database Session rollback)**: Wrapped `get_db()` generator session yields in `try...except Exception...` to ensure transaction rollbacks are cleanly handled.
-- [x] **Bug 39 (CSV Export Room Ownership Check)**: Added validation check in `/admin/export` to ensure the requested `room_id` belongs to the caller's organization, raising a 404 instead of a 200 with empty values on mismatch.
+### Bug 24 - Missing Validation on Room Capacity and Rate
+*File:* [app/routers/rooms.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/rooms.py)
+*Bug*: Pydantic's `RoomCreateRequest` did not enforce the business rules that capacity must be `> 0` and hourly rate `>= 0`. Negative values could be stored.
+*Fix*: Added an explicit check in `create_room` to ensure `capacity > 0` and `hourly_rate_cents >= 0`, raising a 400 Bad Request otherwise.
+
+### Bug 25 - Missing Database UniqueConstraint on Room
+*File:* [app/models.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/models.py)
+*Bug*: The `Room` model did not have `__table_args__ = (UniqueConstraint("org_id", "name"),)` defined, meaning the database layer did not actually enforce room name uniqueness per organization. If the application-level check failed or was bypassed, the database would happily store duplicates.
+*Fix*: Added the `UniqueConstraint` to the `Room` model.
+
+### Bug 26 - Missing Unique Constraint on Reference Code
+*File:* [app/models.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/models.py)
+*Bug*: The business rules dictate that reference codes must be unique system-wide. The `reference_code` column on the `Booking` model was missing `unique=True`.
+*Fix*: Added `unique=True` to the `reference_code` column definition.
+
+### Bug 27 - Room Creation Fails to Invalidate Report Cache
+*File:* [app/routers/rooms.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/rooms.py)
+*Bug*: The `create_room` endpoint did not invalidate the organization's usage report cache. Since the usage report returns a list of *all* rooms in the organization (even those with 0 bookings), a newly created room would not appear in the report until the cache naturally expired.
+*Fix*: Added `cache.invalidate_report(admin.org_id)` to the end of `create_room`.
+
+### Bug 28 - Missing Past Booking Check on Cancellation
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py)
+*Bug*: The `cancel_booking` endpoint calculated the notice period, but did not check if the booking had already started or was in the past. If a past booking was canceled, the `notice.total_seconds()` would be negative, which fell through to the `else` block (0% refund) and successfully cancelled the past booking, violating the rule: "Cancelling is prohibited if start_time is in the past".
+*Fix*: Added an explicit check `if booking.start_time <= datetime.utcnow(): raise AppError(400, "INVALID_BOOKING_WINDOW", ...)` to prevent past cancellations.
+
+### Bug 29 - Admin List Bookings Missing Org Scope
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py)
+*Bug*: The `list_bookings` endpoint unconditionally filtered by `Booking.user_id == user.id`. This meant that even organization admins could only see their own personal bookings, rather than all bookings across the organization, violating Rule 9.
+*Fix*: Added a conditional check. If `user.role == "admin"`, it joins `Room` and filters by `Room.org_id == user.org_id`.
+
+### Bug 30 - Artificial Sleeps Still Active Inside Global Booking Lock
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), lines 30–55
+*Bug*: After the Bug 22/23 fix wrapped conflict and quota checks inside `_booking_lock`, the artificial `time.sleep()` calls inside `_pricing_warmup()` (0.12 s) and `_quota_audit()` (0.1 s) were left in place. Because these helpers are called from within the lock, every booking-creation request holds the global lock for at least 0.22 seconds. With multiple concurrent users this serializes all `POST /bookings` across the entire service, easily causing multi-second stalls and violating Rule 16.
+*Fix*: Removed `_pricing_warmup()`, `_quota_audit()`, and `_settlement_pause()` function definitions entirely, along with their call sites inside `_has_conflict()` and `_check_quota()`. Removed the now-unused `import time`.
+
+### Bug 31 - Start Time Check Uses `>=` Instead of `>`
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), line 89
+*Bug*: The guard `if start >= now` allowed a booking with `start_time == now` to pass validation. The spec (Rule 2) states start_time must be strictly in the future with no grace window of any size. A booking with `start == now` is instantaneously in the past once stored.
+*Fix*: Changed condition to `if start <= now: raise AppError(...)`, effectively requiring `start > now`.
+
+### Bug 32 - Revoked Token Set Grows Without Bound
+*File:* [app/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/auth.py), line 24
+*Bug*: `_revoked_tokens` was a plain `set[str]` that entries were only ever added to (on logout and refresh). Tokens expire after 15 minutes (access) or 7 days (refresh), but their JTIs stayed in the set forever. Under sustained use the set grows without limit, eventually exhausting memory and crashing the process.
+*Fix*: Changed `_revoked_tokens` to `dict[str, int]` mapping `jti → exp_timestamp`. Added `_prune_revoked()` which removes entries whose `exp` has already passed. `_prune_revoked()` is called at the start of `get_token_payload()` so the set is periodically trimmed on every authenticated request. `revoke_access_token()` now stores `payload["jti"] → payload["exp"]` instead of using `.add()`.
+
+### Bug 33 - Cache Module Has No Thread Safety
+*File:* [app/cache.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/cache.py)
+*Bug*: `_report_cache` and `_availability_cache` were plain dicts mutated directly from request-handling threads without any lock. The `invalidate_report()` function built a snapshot of keys and then popped them in two separate steps; a concurrent `set_report()` call between those steps could insert a new stale entry that was never evicted, causing the cache to serve outdated report data indefinitely.
+*Fix*: Added `_cache_lock = threading.Lock()` and wrapped all reads and writes in every cache function with `with _cache_lock:`, making all mutations atomic.
+
+### Bug 34 - Usage Report Accepts Inverted Date Range Silently
+*File:* [app/routers/admin.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/admin.py), lines 29–36
+*Bug*: When `from > to` was supplied (e.g. `?from=2025-12-31&to=2025-01-01`), the computed `range_end` was earlier than `range_start`. The DB query returned zero bookings for every room and the endpoint responded with HTTP 200 and an empty-looking (but structurally valid) report.
+*Fix*: Added an explicit check `if from_date > to_date: raise AppError(400, "INVALID_BOOKING_WINDOW", "from date must not be after to date")` immediately after parsing the dates.
+
+### Bug 35 - Database Session Missing Rollback on Exception
+*File:* [app/database.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/database.py), lines 17–23
+*Bug*: The `get_db()` dependency only had a `finally: db.close()` block. If an unhandled exception propagated out of a route after a `db.flush()` but before `db.commit()` (e.g. an unexpected `IntegrityError`), the session was closed without an explicit rollback. While SQLAlchemy usually rolls back implicitly on close, a session in a broken transaction state can return its underlying connection to the pool in an unusable state.
+*Fix*: Added `except Exception: db.rollback(); raise` before the `finally` block, ensuring the session is always cleanly rolled back before being closed.
+
+### Bug 36 - `Z` Suffix Not Supported in Python 3.9 `fromisoformat()`
+*File:* [app/timeutils.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/timeutils.py), line 11
+*Bug*: Python 3.9's `datetime.fromisoformat()` does not accept the trailing `Z` UTC designator (e.g. `"2025-07-09T10:00:00Z"` raises `ValueError`). Any client sending ISO 8601 datetimes with `Z` as the UTC marker would receive a 500 Internal Server Error instead of processing the booking correctly.
+*Fix*: Added `.replace("Z", "+00:00")` before parsing: `datetime.fromisoformat(value.replace("Z", "+00:00"))`. This normalises `Z` to the explicit `+00:00` offset, which is accepted by all Python versions.
+
+### Bug 37 - Booking Quota Incorrectly Applied to Admins
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), lines 108–109
+*Bug*: The `_check_quota()` function was called unconditionally for all users, including admins. The 3-booking-per-24h rolling window quota is a member-only constraint (Rule 4 defines it for members). Admins performing operational bookings on behalf of the organisation were blocked by this limit.
+*Fix*: Added a role guard `if user.role != "admin": _check_quota(...)` so the quota check is only executed for member-role users. Admins bypass it entirely.
+
+### Bug 38 - `_pricing_warmup()` sleep inside SQLite write lock
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), `_has_conflict()`
+*Bug*: `_pricing_warmup()` called `time.sleep(0.12)` inside `_has_conflict()`, which executes within a `BEGIN IMMEDIATE` transaction holding the SQLite exclusive write lock. Every booking creation blocked ALL other write operations for 120ms.
+*Fix*: Removed the artificial `_pricing_warmup()` call.
+
+### Bug 40 - `_quota_audit()` sleep inside SQLite write lock
+*File:* [app/routers/bookings.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/bookings.py), `_check_quota()`
+*Bug*: `_quota_audit()` called `time.sleep(0.1)` inside `_check_quota()`, also within the `BEGIN IMMEDIATE` write lock. Combined with Bug 39, every member booking held the exclusive DB lock for 220ms+.
+*Fix*: Removed the artificial `_quota_audit()` call.
+
+### Bug 41 - `_aggregate_pause()` sleep inside `_stats_lock`
+*File:* [app/services/stats.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/stats.py), `record_create()` and `record_cancel()`
+*Bug*: `_aggregate_pause()` called `time.sleep(0.1)` while holding `_stats_lock`. Since every booking create/cancel calls `record_create`/`record_cancel`, and `get()` (stats endpoint) also acquires the same lock, all stats operations serialized behind a 100ms bottleneck.
+*Fix*: Removed the artificial `_aggregate_pause()` calls from both functions and replaced the stats service in-memory cache with direct DB query aggregations.
+
+### Bug 42 - `_settle_pause()` sleep inside `_ratelimit_lock`
+*File:* [app/services/ratelimit.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/ratelimit.py), `record_and_check()`
+*Bug*: `_settle_pause()` called `time.sleep(0.1)` while holding `_ratelimit_lock`. Every booking attempt (regardless of user) waited behind a single 100ms-held global lock, preventing concurrent booking requests from proceeding.
+*Fix*: Removed the artificial `_settle_pause()` call.
+
+### Bug 43 - `_format_pause()` sleep inside `_reference_lock`
+*File:* [app/services/reference.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/reference.py), `next_reference_code()`
+*Bug*: `_format_pause()` called `time.sleep(0.12)` while holding `_reference_lock`. Reference code generation is on the critical path of every booking creation, serializing all concurrent bookings behind a 120ms lock hold.
+*Fix*: Removed the artificial `_format_pause()` call.
+
+### Bug 44 - Notification sleeps serializing all requests
+*File:* [app/services/notifications.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/notifications.py), `_send_email()` and `_write_audit()`
+*Bug*: `_send_email()` slept 120ms inside `_email_lock` and `_write_audit()` slept 100ms inside `_audit_lock`. Both are called on every booking create/cancel. Two global locks held for a combined 220ms serialized all post-commit processing, even though the DB transaction was already committed.
+*Fix*: Removed the artificial sleeps from both functions.
+
+### Bug 45 - Org registration TOCTOU race causes 500 error
+*File:* [app/routers/auth.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/routers/auth.py), `register()`
+*Bug*: Two concurrent `POST /auth/register` requests with the same new `org_name` both see `org=None`, both set `role="admin"`, and both attempt to `INSERT` the organization. Since `Organization.name` has `unique=True`, the second insert crashes with an unhandled `IntegrityError` returning an HTTP 500.
+*Fix*: Wrapped the org creation in a `try/except IntegrityError` block. On conflict, the session is rolled back, the existing org is re-queried, and the role is correctly set to `"member"`.
+
+### Bug 46 - `stats.record_cancel` allows negative revenue
+*File:* [app/services/stats.py](file:///home/rakin/Desktop/Codes/ICT_Fest_Hackathon_Preliminary/app/services/stats.py), `record_cancel()`
+*Bug*: `record_cancel` applied `max(0, count - 1)` to prevent negative booking count but used bare `revenue - price_cents` for revenue, which could go negative if stats were initialized at an inconsistent point.
+*Fix*: Stats service now queries the DB directly with `COUNT`/`SUM` aggregates, avoiding negative revenue entirely.

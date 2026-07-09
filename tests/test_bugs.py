@@ -517,3 +517,96 @@ def test_export_room_ownership(client):
     # Should return 404 ROOM_NOT_FOUND
     assert resp.status_code == 404
     assert resp.json()["code"] == "ROOM_NOT_FOUND"
+
+
+def test_admin_quota_bypass(client):
+    org = f"org-quota-admin-{time.time()}"
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+    
+    room = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers).json()
+    
+    # Admin books more than 3 slots in next 24h -> should be allowed (quota limit is member-only)
+    for i in range(1, 5):
+        b = client.post(
+            "/bookings",
+            json={"room_id": room["id"], "start_time": _future(i * 3), "end_time": _future(i * 3 + 1)},
+            headers=headers,
+        )
+        assert b.status_code == 201
+
+
+def test_org_registration_concurrent_handling(client):
+    import threading
+    org_name = f"org-race-{time.time()}"
+    
+    results = []
+    def do_reg(username):
+        try:
+            resp = client.post("/auth/register", json={"org_name": org_name, "username": username, "password": "password"})
+            results.append((resp.status_code, resp.json()))
+        except Exception as e:
+            results.append(e)
+            
+    t1 = threading.Thread(target=do_reg, args=("user1",))
+    t2 = threading.Thread(target=do_reg, args=("user2",))
+    
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    
+    # One should register as admin, the other as member, both 201
+    assert len(results) == 2
+    assert results[0][0] == 201
+    assert results[1][0] == 201
+    roles = {results[0][1]["role"], results[1][1]["role"]}
+    assert roles == {"admin", "member"}
+
+
+def test_notification_latency():
+    from app.services import notifications
+    from app.models import Booking
+    booking = Booking(id=1, room_id=1, user_id=1)
+    
+    start_t = time.time()
+    notifications.notify_created(booking)
+    duration = time.time() - start_t
+    # Previously slept 0.22 seconds. Now it should be virtually instantaneous.
+    assert duration < 0.05
+
+
+def test_stats_not_negative(client):
+    org = f"org-stats-neg-{time.time()}"
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+    
+    room = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers).json()
+    room_id = room["id"]
+    
+    # Initially count is 0, revenue is 0
+    resp = client.get(f"/rooms/{room_id}/stats", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["total_confirmed_bookings"] == 0
+    assert resp.json()["total_revenue_cents"] == 0
+    
+    # Create booking
+    b = client.post(
+        "/bookings",
+        json={"room_id": room_id, "start_time": _future(10), "end_time": _future(11)},
+        headers=headers,
+    ).json()
+    
+    # Stats incremented
+    resp = client.get(f"/rooms/{room_id}/stats", headers=headers)
+    assert resp.json()["total_confirmed_bookings"] == 1
+    assert resp.json()["total_revenue_cents"] == 100
+    
+    # Cancel booking
+    client.post(f"/bookings/{b['id']}/cancel", headers=headers)
+    
+    # Stats decremented
+    resp = client.get(f"/rooms/{room_id}/stats", headers=headers)
+    assert resp.json()["total_confirmed_bookings"] == 0
+    assert resp.json()["total_revenue_cents"] == 0
+
