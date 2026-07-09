@@ -106,3 +106,20 @@
 - [x] **Bug 36 & 37 (Rate limiter races and sleeps):** Locked limiter state changes and removed liveness blocking sleeps.
 - [x] **Bug 39 (CSV export missing room ownership validation):** Added validation check in `/admin/export` to verify the requested room ID belongs to the administrator's organization, returning a 404 instead of a 200 with an empty file when cross-org resource IDs are accessed.
 
+---
+
+## 8. Unsolved Bugs (Identified Gaps)
+
+- [ ] **Bug 19 (Double Cancel ORM State)**: Under concurrent cancellation requests, status verification and DB updates are not fully isolated via `db.flush()` and inside-lock ORM queries, enabling potential duplicate refund actions.
+- [ ] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` lacks query checking for existing room names, leading to a database `IntegrityError` (causing a 500 error) instead of a graceful `409 ROOM_NAME_TAKEN` AppError.
+- [ ] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` does not validate that room capacity is strictly greater than 0 and hourly rate is greater than or equal to 0, which could allow negative values to be persisted.
+- [ ] **Bug 26 (Missing Database UniqueConstraint on Room)**: `Room` model lacks a `UniqueConstraint("org_id", "name")` in `app/models.py`.
+- [ ] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` does not reject cancellations when `start_time` is in the past, allowing invalid refunds.
+- [ ] **Bug 30 (Admin List Bookings Org Scope)**: `list_bookings` filters by user ID unconditionally, preventing organization admins from seeing other members' bookings in the organization.
+- [ ] **Bug 31 (Artificial Sleeps in lock)**: Time sleeps inside `_pricing_warmup`, `_quota_audit`, and `_settlement_pause` are still present (or changed to `pass` but not deleted entirely) inside the lock scope.
+- [ ] **Bug 33 (Revoked Token Set growth/pruning)**: Revoked tokens in `_revoked_tokens` grow indefinitely without expiry-timestamp pruning logic.
+- [ ] **Bug 34 (Cache Module Thread Safety)**: No mutex locking logic wraps cache updates or read accesses in `app/cache.py`.
+- [ ] **Bug 35 (Usage Report Inverted Dates)**: `usage_report` endpoint allows inverted date ranges silently (`from > to`) without raising a 400 error.
+- [ ] **Bug 36 (Database Session rollback)**: `get_db()` session generator lacks `except Exception: db.rollback(); raise` logic.
+- [ ] **Bug 39 (CSV Export Room Ownership Check)**: `admin/export` lacks validation checking to ensure the requested `room_id` belongs to the caller's organization, allowing a 200 return with empty values instead of a 404.
+
