@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import os
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -22,6 +23,7 @@ from .models import User
 # Access tokens presented to /auth/logout are recorded here so they can no
 # longer be used.
 _revoked_tokens: set[str] = set()
+_revoked_tokens_lock = threading.Lock()
 
 _PBKDF2_ROUNDS = 100_000
 
@@ -83,11 +85,22 @@ def decode_token(token: str) -> dict:
 
 
 def is_token_revoked(jti: str) -> bool:
-    return jti in _revoked_tokens
+    with _revoked_tokens_lock:
+        return jti in _revoked_tokens
 
 
 def revoke_token(jti: str) -> None:
-    _revoked_tokens.add(jti)
+    with _revoked_tokens_lock:
+        _revoked_tokens.add(jti)
+
+
+def revoke_token_once(jti: str) -> bool:
+    """Atomically mark a token id used/revoked."""
+    with _revoked_tokens_lock:
+        if jti in _revoked_tokens:
+            return False
+        _revoked_tokens.add(jti)
+        return True
 
 
 def revoke_access_token(payload: dict) -> None:

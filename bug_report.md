@@ -27,6 +27,8 @@
   - [x] **Solved:** Added `AppError(409, "USERNAME_TAKEN", ...)` check for duplicate username registrations.
 - **Bug B:** `/auth/refresh` decodes refresh tokens but fails to track or blacklist their `jti` identifiers, allowing single-use refresh tokens to be reused infinitely.
   - [x] **Solved:** Blacklists the refresh token's `jti` upon use to enforce single-use logic.
+- **Bug C:** Concurrent `/auth/refresh` requests could both pass the `is_token_revoked()` check before either request revoked the same `jti`.
+  - [x] **Solved:** Added atomic `revoke_token_once()` helper guarded by a lock; now only one concurrent refresh can consume a token.
 - [x] **Bug 3 (Refresh token reusable):** Enforced single-use refresh tokens via used-list verification.
 - [x] **Bug 4 (Duplicate username returned success):** Fixed conflict behavior by raising `USERNAME_TAKEN` on registration collision.
 
@@ -67,6 +69,7 @@
 - [x] **Bug 25 (Notice under 24 hours refund):** Set refund percent to 0% for cancellations under 24 hours notice.
 - [x] **Bug 26 (Refund rounding math):** Mapped cent calculations using `Decimal` and `ROUND_HALF_UP` for precision half-up rounding.
 - [x] **Bug 30 (Concurrent cancel race):** Prevented status races on cancellation using a cancellation lock.
+- [x] **Bug 39 (Concurrent cancel stale ORM object):** Moved booking lookup inside the cancellation lock so later requests see the committed `cancelled` status and return `409 ALREADY_CANCELLED` instead of causing duplicate refund-log `500` errors.
 - [x] **Bug 31 & 32 (Cache invalidations on creation/cancellation):** Synchronously cleared respective report and availability caches.
 
 ---
