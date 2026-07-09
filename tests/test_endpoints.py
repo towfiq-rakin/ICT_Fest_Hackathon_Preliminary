@@ -18,8 +18,14 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_db():
-    Base.metadata.drop_all(bind=engine)
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys = OFF;"))
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+        conn.execute(text("PRAGMA foreign_keys = ON;"))
+        conn.commit()
     ratelimit._buckets.clear()
     stats._stats.clear()
     if hasattr(reference, "_counter"):
