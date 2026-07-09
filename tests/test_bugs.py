@@ -409,3 +409,111 @@ def test_pagination_and_ordering(client):
     listing2 = client.get("/bookings?page=2&limit=2", headers=headers).json()
     assert len(listing2["items"]) == 1
     assert listing2["items"][0]["id"] == b3["id"]
+
+
+def test_room_creation_duplicate_name_and_invalid_params(client):
+    org = f"org-room-test-{time.time()}"
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    # Create room
+    resp = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers)
+    assert resp.status_code == 201
+
+    # Duplicate room name should fail with 409 ROOM_NAME_TAKEN
+    resp2 = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers)
+    assert resp2.status_code == 409
+    assert resp2.json()["code"] == "ROOM_NAME_TAKEN"
+
+    # Capacity <= 0 should fail with 400 INVALID_ROOM_PARAMETERS
+    resp3 = client.post("/rooms", json={"name": "Room B", "capacity": 0, "hourly_rate_cents": 100}, headers=headers)
+    assert resp3.status_code == 400
+    assert resp3.json()["code"] == "INVALID_ROOM_PARAMETERS"
+
+    # Hourly rate < 0 should fail with 400 INVALID_ROOM_PARAMETERS
+    resp4 = client.post("/rooms", json={"name": "Room C", "capacity": 5, "hourly_rate_cents": -10}, headers=headers)
+    assert resp4.status_code == 400
+    assert resp4.json()["code"] == "INVALID_ROOM_PARAMETERS"
+
+
+def test_cancel_past_booking(client):
+    org = f"org-cancel-test-{time.time()}"
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    room = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=headers).json()
+    
+    start = _future(2)
+    end = _future(3)
+    booking = client.post("/bookings", json={"room_id": room["id"], "start_time": start, "end_time": end}, headers=headers).json()
+
+    # Update start_time to the past using a raw SQL connection
+    from app.database import engine
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(
+            text("UPDATE bookings SET start_time = :past_time WHERE id = :id"),
+            {"past_time": datetime.utcnow() - timedelta(hours=5), "id": booking["id"]}
+        )
+        conn.commit()
+
+    # Attempt to cancel booking in the past should fail with 400 INVALID_CANCELLATION
+    resp = client.post(f"/bookings/{booking['id']}/cancel", headers=headers)
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "INVALID_CANCELLATION"
+
+
+def test_admin_list_bookings_scope(client):
+    org = f"org-scope-test-{time.time()}"
+    # Register admin
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    admin_headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    # Register member
+    client.post("/auth/register", json={"org_name": org, "username": "member", "password": "password"})
+    member_headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'member', 'password': 'password'}).json()['access_token']}"}
+
+    room = client.post("/rooms", json={"name": "Room A", "capacity": 5, "hourly_rate_cents": 100}, headers=admin_headers).json()
+
+    start = _future(10)
+    end = _future(11)
+    booking = client.post("/bookings", json={"room_id": room["id"], "start_time": start, "end_time": end}, headers=member_headers).json()
+
+    # Member lists bookings: should see their own booking
+    member_list = client.get("/bookings", headers=member_headers).json()
+    assert member_list["total"] == 1
+    assert member_list["items"][0]["id"] == booking["id"]
+
+    # Admin lists bookings: should see the member's booking because they are in the same org
+    admin_list = client.get("/bookings", headers=admin_headers).json()
+    assert admin_list["total"] == 1
+    assert admin_list["items"][0]["id"] == booking["id"]
+
+
+def test_usage_report_inverted_dates(client):
+    org = f"org-usage-test-{time.time()}"
+    client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
+    headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    # Call usage report with from > to
+    resp = client.get("/admin/usage-report?from=2026-07-15&to=2026-07-10", headers=headers)
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "INVALID_BOOKING_WINDOW"
+
+
+def test_export_room_ownership(client):
+    org1 = f"org-exp-1-{time.time()}"
+    client.post("/auth/register", json={"org_name": org1, "username": "admin", "password": "password"})
+    headers1 = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org1, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    org2 = f"org-exp-2-{time.time()}"
+    client.post("/auth/register", json={"org_name": org2, "username": "admin", "password": "password"})
+    headers2 = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org2, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
+
+    room2 = client.post("/rooms", json={"name": "Room B", "capacity": 5, "hourly_rate_cents": 100}, headers=headers2).json()
+
+    # Admin 1 requests export for Room B (cross-org room ID)
+    resp = client.get(f"/admin/export?room_id={room2['id']}", headers=headers1)
+    # Should return 404 ROOM_NOT_FOUND
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "ROOM_NOT_FOUND"

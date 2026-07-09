@@ -107,19 +107,19 @@
 - [x] **Bug 39 (CSV export missing room ownership validation):** Added validation check in `/admin/export` to verify the requested room ID belongs to the administrator's organization, returning a 404 instead of a 200 with an empty file when cross-org resource IDs are accessed.
 
 ---
+---
 
-## 8. Unsolved Bugs (Identified Gaps)
+## 8. Solved Gaps (New Audited Bugs)
 
-- [ ] **Bug 19 (Double Cancel ORM State)**: Under concurrent cancellation requests, status verification and DB updates are not fully isolated via `db.flush()` and inside-lock ORM queries, enabling potential duplicate refund actions.
-- [ ] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` lacks query checking for existing room names, leading to a database `IntegrityError` (causing a 500 error) instead of a graceful `409 ROOM_NAME_TAKEN` AppError.
-- [ ] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` does not validate that room capacity is strictly greater than 0 and hourly rate is greater than or equal to 0, which could allow negative values to be persisted.
-- [ ] **Bug 26 (Missing Database UniqueConstraint on Room)**: `Room` model lacks a `UniqueConstraint("org_id", "name")` in `app/models.py`.
-- [ ] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` does not reject cancellations when `start_time` is in the past, allowing invalid refunds.
-- [ ] **Bug 30 (Admin List Bookings Org Scope)**: `list_bookings` filters by user ID unconditionally, preventing organization admins from seeing other members' bookings in the organization.
-- [ ] **Bug 31 (Artificial Sleeps in lock)**: Time sleeps inside `_pricing_warmup`, `_quota_audit`, and `_settlement_pause` are still present (or changed to `pass` but not deleted entirely) inside the lock scope.
-- [ ] **Bug 33 (Revoked Token Set growth/pruning)**: Revoked tokens in `_revoked_tokens` grow indefinitely without expiry-timestamp pruning logic.
-- [ ] **Bug 34 (Cache Module Thread Safety)**: No mutex locking logic wraps cache updates or read accesses in `app/cache.py`.
-- [ ] **Bug 35 (Usage Report Inverted Dates)**: `usage_report` endpoint allows inverted date ranges silently (`from > to`) without raising a 400 error.
-- [ ] **Bug 36 (Database Session rollback)**: `get_db()` session generator lacks `except Exception: db.rollback(); raise` logic.
-- [ ] **Bug 39 (CSV Export Room Ownership Check)**: `admin/export` lacks validation checking to ensure the requested `room_id` belongs to the caller's organization, allowing a 200 return with empty values instead of a 404.
-
+- [x] **Bug 19 (Double Cancel ORM State)**: Under concurrent cancellation requests, status verification and DB updates are fully isolated via `populate_existing()`, `db.refresh(booking)`, and `db.flush()` inside the cancel lock, preventing duplicate refund actions.
+- [x] **Bug 24 (Missing Duplicate Name Check on Room Creation)**: `create_room` now queries for existing room names and raises a graceful `409 ROOM_NAME_TAKEN` AppError.
+- [x] **Bug 25 (Missing Validation on Room Capacity and Rate)**: `create_room` now validates that room capacity is > 0 and hourly rate is >= 0, raising `400 INVALID_ROOM_PARAMETERS` on validation failure.
+- [x] **Bug 26 (Missing Database UniqueConstraint on Room)**: Added `UniqueConstraint("org_id", "name")` to the `Room` model in `app/models.py`.
+- [x] **Bug 29 (Missing Past Booking Check on Cancellation)**: `cancel_booking` now rejects cancellations with `400 INVALID_CANCELLATION` if `start_time` is in the past.
+- [x] **Bug 30 (Admin List Bookings Org Scope)**: `list_bookings` filters by organization scope instead of user ID when caller is an admin, enabling admins to see other members' bookings in the organization.
+- [x] **Bug 31 (Artificial Sleeps in lock)**: Removed dummy functions `_pricing_warmup`, `_quota_audit`, and `_settlement_pause` and deleted their invocations entirely.
+- [x] **Bug 33 (Revoked Token Set growth/pruning)**: Upgraded `_revoked_tokens` to store JWT expirations as mapping `jti -> exp`, pruning expired tokens dynamically to avoid memory leaks.
+- [x] **Bug 34 (Cache Module Thread Safety)**: Wrapped report and availability cache read/update/invalidation operations in a `threading.Lock`.
+- [x] **Bug 35 (Usage Report Inverted Dates)**: Added validation to `usage_report` to raise a `400 INVALID_BOOKING_WINDOW` error when `from > to` inverted ranges are requested.
+- [x] **Bug 36 (Database Session rollback)**: Wrapped `get_db()` generator session yields in `try...except Exception...` to ensure transaction rollbacks are cleanly handled.
+- [x] **Bug 39 (CSV Export Room Ownership Check)**: Added validation check in `/admin/export` to ensure the requested `room_id` belongs to the caller's organization, raising a 404 instead of a 200 with empty values on mismatch.

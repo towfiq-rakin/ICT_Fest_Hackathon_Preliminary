@@ -80,7 +80,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     if data.get("type") != "refresh":
         raise AppError(401, "UNAUTHORIZED", "Wrong token type")
     jti = data.get("jti")
-    if not revoke_token_once(jti):
+    if not revoke_token_once(jti, data.get("exp")):
         raise AppError(401, "UNAUTHORIZED", "Token has been revoked")
     user = db.query(User).filter(User.id == int(data["sub"])).first()
     if user is None:

@@ -45,6 +45,15 @@ def create_room(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
+    if payload.capacity <= 0:
+        raise AppError(400, "INVALID_ROOM_PARAMETERS", "Room capacity must be greater than 0")
+    if payload.hourly_rate_cents < 0:
+        raise AppError(400, "INVALID_ROOM_PARAMETERS", "Hourly rate must be greater than or equal to 0")
+
+    existing = db.query(Room).filter(Room.org_id == admin.org_id, Room.name == payload.name).first()
+    if existing:
+        raise AppError(409, "ROOM_NAME_TAKEN", "Room name already taken in this organization")
+
     room = Room(
         org_id=admin.org_id,
         name=payload.name,

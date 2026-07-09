@@ -21,8 +21,8 @@ from .errors import AppError
 from .models import User
 
 # Access tokens presented to /auth/logout are recorded here so they can no
-# longer be used.
-_revoked_tokens: set[str] = set()
+# longer be used. Map from jti -> expiration timestamp (int) to allow pruning.
+_revoked_tokens: dict[str, int] = {}
 _revoked_tokens_lock = threading.Lock()
 
 _PBKDF2_ROUNDS = 100_000
@@ -84,27 +84,41 @@ def decode_token(token: str) -> dict:
         raise AppError(401, "UNAUTHORIZED", "Invalid or expired token")
 
 
+def _prune_expired_tokens_locked(now: int) -> None:
+    expired = [jti for jti, exp in _revoked_tokens.items() if exp < now]
+    for jti in expired:
+        del _revoked_tokens[jti]
+
+
 def is_token_revoked(jti: str) -> bool:
     with _revoked_tokens_lock:
+        now = _now_ts()
+        _prune_expired_tokens_locked(now)
         return jti in _revoked_tokens
 
 
-def revoke_token(jti: str) -> None:
+def revoke_token(jti: str, exp: int) -> None:
     with _revoked_tokens_lock:
-        _revoked_tokens.add(jti)
+        now = _now_ts()
+        _prune_expired_tokens_locked(now)
+        if exp >= now:
+            _revoked_tokens[jti] = exp
 
 
-def revoke_token_once(jti: str) -> bool:
+def revoke_token_once(jti: str, exp: int) -> bool:
     """Atomically mark a token id used/revoked."""
     with _revoked_tokens_lock:
+        now = _now_ts()
+        _prune_expired_tokens_locked(now)
         if jti in _revoked_tokens:
             return False
-        _revoked_tokens.add(jti)
+        if exp >= now:
+            _revoked_tokens[jti] = exp
         return True
 
 
 def revoke_access_token(payload: dict) -> None:
-    revoke_token(payload["jti"])
+    revoke_token(payload["jti"], payload["exp"])
 
 
 def get_token_payload(request: Request) -> dict:

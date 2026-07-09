@@ -32,6 +32,9 @@ def usage_report(
     except ValueError:
         raise AppError(400, "INVALID_BOOKING_WINDOW", "Invalid date range")
 
+    if from_date > to_date:
+        raise AppError(400, "INVALID_BOOKING_WINDOW", "from date must be before or equal to to date")
+
     range_start = datetime.combine(from_date, time.min)
     range_end = datetime.combine(to_date + timedelta(days=1), time.min)
 
@@ -69,5 +72,9 @@ def export(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
+    if room_id is not None:
+        room = db.query(Room).filter(Room.id == room_id, Room.org_id == admin.org_id).first()
+        if room is None:
+            raise AppError(404, "ROOM_NOT_FOUND", "Room not found")
     csv_body = generate_export(db, admin.org_id, admin.id, room_id, include_all)
     return Response(content=csv_body, media_type="text/csv")
