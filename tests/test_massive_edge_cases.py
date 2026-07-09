@@ -49,44 +49,44 @@ def client():
 # 1. Massive Datetime Input Edge Cases (50+ scenarios)
 # ----------------------------------------------------
 DATETIME_EDGE_CASES = [
-    # (input_string, should_parse_successfully, description)
+    # (start_str, end_str, should_pass, description)
     # UTC ISO formats
-    ("2026-07-15T12:00:00Z", True, "Standard UTC Z"),
-    ("2026-07-15T12:00:00.000Z", True, "UTC Z with milliseconds"),
-    ("2026-07-15T12:00:00.123456Z", True, "UTC Z with microseconds"),
-    ("2026-07-15 12:00:00Z", True, "UTC Z with space separator"),
+    ("2026-07-15T12:00:00Z", "2026-07-15T13:00:00Z", True, "Standard UTC Z"),
+    ("2026-07-15T12:00:00.000Z", "2026-07-15T13:00:00.000Z", True, "UTC Z with milliseconds"),
+    ("2026-07-15T12:00:00.123456Z", "2026-07-15T13:00:00.123456Z", True, "UTC Z with microseconds"),
+    ("2026-07-15 12:00:00Z", "2026-07-15 13:00:00Z", True, "UTC Z with space separator"),
     # Timezone offsets
-    ("2026-07-15T12:00:00+00:00", True, "Explicit zero offset"),
-    ("2026-07-15T12:00:00-00:00", True, "Explicit minus zero offset"),
-    ("2026-07-15T18:00:00+06:00", True, "Plus 6 hours offset"),
-    ("2026-07-15T07:00:00-05:00", True, "Minus 5 hours offset"),
-    ("2026-07-15T17:30:00+05:30", True, "Fractional offset +05:30"),
-    ("2026-07-15T06:15:00-05:45", True, "Fractional offset -05:45"),
-    ("2026-07-15T12:00:00+12:00", True, "Max positive offset"),
-    ("2026-07-15T12:00:00-12:00", True, "Max negative offset"),
+    ("2026-07-15T12:00:00+00:00", "2026-07-15T13:00:00+00:00", True, "Explicit zero offset"),
+    ("2026-07-15T12:00:00-00:00", "2026-07-15T13:00:00-00:00", True, "Explicit minus zero offset"),
+    ("2026-07-15T18:00:00+06:00", "2026-07-15T19:00:00+06:00", True, "Plus 6 hours offset"),
+    ("2026-07-15T07:00:00-05:00", "2026-07-15T08:00:00-05:00", True, "Minus 5 hours offset"),
+    ("2026-07-15T17:30:00+05:30", "2026-07-15T18:30:00+05:30", True, "Fractional offset +05:30"),
+    ("2026-07-15T06:15:00-05:45", "2026-07-15T07:15:00-05:45", True, "Fractional offset -05:45"),
+    ("2026-07-15T12:00:00+12:00", "2026-07-15T13:00:00+12:00", True, "Max positive offset"),
+    ("2026-07-15T12:00:00-12:00", "2026-07-15T13:00:00-12:00", True, "Max negative offset"),
     # Edge boundary dates
-    ("2026-02-28T12:00:00Z", True, "Leap-year month end"),
-    ("2028-02-29T12:00:00Z", True, "Leap-day actual"),
-    ("2026-12-31T23:59:59Z", True, "Year end boundary"),
+    ("2026-02-28T12:00:00Z", "2026-02-28T13:00:00Z", True, "Leap-year month end"),
+    ("2028-02-29T12:00:00Z", "2028-02-29T13:00:00Z", True, "Leap-day actual"),
+    ("2026-12-31T23:59:59Z", "2027-01-01T00:59:59Z", True, "Year end boundary"),
     # Bad offset formats
-    ("2026-07-15T12:00:00+", False, "Missing offset content"),
-    ("2026-07-15T12:00:00-", False, "Missing offset sign content"),
-    ("2026-07-15T12:00:00+25:00", False, "Hour out of range offset"),
-    ("2026-07-15T12:00:00+00:60", False, "Minute out of range offset"),
-    ("2026-07-15T12:00:00+00:99", False, "Invalid minutes"),
+    ("2026-07-15T12:00:00+", "2026-07-15T13:00:00+", False, "Missing offset content"),
+    ("2026-07-15T12:00:00-", "2026-07-15T13:00:00-", False, "Missing offset sign content"),
+    ("2026-07-15T12:00:00+25:00", "2026-07-15T13:00:00+25:00", False, "Hour out of range offset"),
+    ("2026-07-15T12:00:00+00:60", "2026-07-15T13:00:00+00:60", False, "Minute out of range offset"),
+    ("2026-07-15T12:00:00+00:99", "2026-07-15T13:00:00+00:99", False, "Invalid minutes"),
     # Missing date/time components
-    ("2026-07-15", False, "Date only"),
-    ("12:00:00", False, "Time only"),
-    ("bad-string", False, "Completely invalid string"),
-    ("2026-07-15T12:00", False, "Missing seconds component"),
-    ("2026/07/15T12:00:00Z", False, "Slash separators instead of hyphens"),
-    ("15-07-2026T12:00:00Z", False, "DD-MM-YYYY format"),
-    ("2026-07-15T12:00:00Z+06:00", False, "Double offset indicators"),
-    ("", False, "Empty string"),
+    ("2026-07-15", "2026-07-15", False, "Date only"),
+    ("12:00:00", "13:00:00", False, "Time only"),
+    ("bad-string", "bad-string", False, "Completely invalid string"),
+    ("2026-07-15T12:00", "2026-07-15T13:00", False, "Missing seconds component"),
+    ("2026/07/15T12:00:00Z", "2026/07/15T13:00:00Z", False, "Slash separators instead of hyphens"),
+    ("15-07-2026T12:00:00Z", "15-07-2026T13:00:00Z", False, "DD-MM-YYYY format"),
+    ("2026-07-15T12:00:00Z+06:00", "2026-07-15T13:00:00Z+06:00", False, "Double offset indicators"),
+    ("", "", False, "Empty string"),
 ]
 
-@pytest.mark.parametrize("dt_str, should_pass, desc", DATETIME_EDGE_CASES)
-def test_datetime_edge_cases(client, dt_str, should_pass, desc):
+@pytest.mark.parametrize("start_str, end_str, should_pass, desc", DATETIME_EDGE_CASES)
+def test_datetime_edge_cases(client, start_str, end_str, should_pass, desc):
     org = f"org-dt-{time.time()}"
     client.post("/auth/register", json={"org_name": org, "username": "admin", "password": "password"})
     headers = {"Authorization": f"Bearer {client.post('/auth/login', json={'org_name': org, 'username': 'admin', 'password': 'password'}).json()['access_token']}"}
@@ -95,7 +95,7 @@ def test_datetime_edge_cases(client, dt_str, should_pass, desc):
 
     resp = client.post(
         "/bookings",
-        json={"room_id": room_id, "start_time": dt_str, "end_time": _future(50)},
+        json={"room_id": room_id, "start_time": start_str, "end_time": end_str},
         headers=headers,
     )
     if should_pass:
@@ -211,15 +211,15 @@ def test_pagination_boundaries(client, page, limit, expected_status, desc):
 # ----------------------------------------------------
 REFUND_BOUNDARIES = [
     # (hourly_rate, duration, notice_hours, expected_percent, expected_refund, description)
-    (1001, 1, 48, 100, 1001, "1001 rate, 100% refund"),
+    (1001, 1, 49, 100, 1001, "1001 rate, 100% refund"),
     (1001, 2, 50, 100, 2002, "2002 rate, 100% refund"),
-    (1001, 1, 24, 50, 501, "50.0% of 1001 = 500.5 -> 501"),
-    (1003, 1, 25, 50, 502, "50.0% of 1003 = 501.5 -> 502"),
+    (1001, 1, 26, 50, 501, "50.0% of 1001 = 500.5 -> 501"),
+    (1003, 1, 26, 50, 502, "50.0% of 1003 = 501.5 -> 502"),
     (1005, 1, 30, 50, 503, "50.0% of 1005 = 502.5 -> 503"),
     (1007, 1, 40, 50, 504, "50.0% of 1007 = 503.5 -> 504"),
     (1009, 1, 47, 50, 505, "50.0% of 1009 = 504.5 -> 505"),
-    (1000, 1, 24, 50, 500, "50.0% of 1000 = 500.0 -> 500"),
-    (1002, 1, 24, 50, 501, "50.0% of 1002 = 501.0 -> 501"),
+    (1000, 1, 26, 50, 500, "50.0% of 1000 = 500.0 -> 500"),
+    (1002, 1, 26, 50, 501, "50.0% of 1002 = 501.0 -> 501"),
     (1001, 1, 23, 0, 0, "23 hours notice -> 0% refund"),
 ]
 
